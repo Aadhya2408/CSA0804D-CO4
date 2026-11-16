@@ -1,0 +1,15 @@
+def summarise_bad(path):
+    present = absent = 0
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            try:
+                reg_no, date_text, status = parse_line(line)
+                if status == 'P':
+                    presnt += 1     # typing error: should be present
+                else:
+                    absent += 1
+            except Exception:       # too broad
+                pass
+
+    return present, absent
+print(summarise_bad('att_2025-10-01.txt')) # prints (0, 0) with no error
