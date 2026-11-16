@@ -1,0 +1,95 @@
+#reader.py
+"""reader.py - turn attendance files into records."""
+from pathlib import Path
+
+class InvalidRecord(ValueError):
+    '''A damaged attendance line.'''
+
+def parse_line(line):
+    parts = [p.strip() for p in line.split(',')]
+    if len(parts) != 3 or not parts[0]:
+        raise InvalidRecord('expected reg_no,date,status')
+    reg_no, date_text, status = parts
+    status = status.upper()
+    if status not in ('P', 'A'):
+        raise InvalidRecord('status must be P or A')
+    return reg_no, date_text, status
+
+def read_month(folder):
+    '''Return (records, bad_lines). records[reg_no][date] = P or A.'''
+    folder = Path(folder)
+    if not folder.is_dir():
+        raise FileNotFoundError('month folder not found: ' + str(folder))
+    records = {}
+    bad_lines = []
+    for path in sorted(folder.glob('att_*.txt')):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                for line_no, line in enumerate(f, start=1):
+                    if not line.strip():
+                        continue
+                    try:
+                        reg_no, date_text, status = parse_line(line)
+                    except InvalidRecord as exc:
+                        bad_lines.append((path.name, line_no, line.rstrip(), str(exc)))
+                    else:
+                        records.setdefault(reg_no, {})[date_text] = status
+        except (PermissionError, UnicodeDecodeError) as exc:
+            bad_lines.append((path.name, 0, '', 'unreadable file: ' + str(exc)))
+    return records, bad_lines
+
+#stats.py
+"""stats.py - attendance calculations."""
+
+def percentage(days):
+    '''days is {date: 'P' or 'A'}; return percent present (0.0 if empty).'''
+    if not days:
+        return 0.0
+    present = sum(1 for status in days.values() if status == 'P')
+    return 100.0 * present / len(days)
+
+
+def below_threshold(records, limit=75.0):
+    rows = [(reg_no, percentage(days)) for reg_no, days in records.items()]
+    return sorted(row for row in rows if row[1] < limit)
+
+#report.py
+"""report.py - format results as lines of text."""
+from .stats import below_threshold    # package style (relative import)
+
+def below_75_report(records):
+    lines = ['Students below 75 percent']
+    for reg_no, pct in below_threshold(records):
+        lines.append(f'{reg_no:<10}{pct:6.1f}%')
+    return lines
+
+def bad_line_report(bad_lines):
+    lines = ['Damaged lines']
+    for file_name, line_no, text, reason in bad_lines:
+        lines.append(f'{file_name}:{line_no}: {reason}: {text}')
+    return lines
+
+#__init__.py (package only)
+"""attendance package."""
+from .reader import read_month, InvalidRecord
+from .stats import percentage, below_threshold
+from .report import below_75_report, bad_line_report
+
+__all__ = ['read_month', 'InvalidRecord', 'percentage', 'below_threshold',
+           'below_75_report', 'bad_line_report']
+
+#run_report.py (driver for the package)
+import sys
+from attendance import read_month, below_75_report, bad_line_report
+
+def main(folder):
+    try:
+        records, bad = read_month(folder)
+    except FileNotFoundError as exc:
+        print('Error:', exc)
+        return
+    for line in below_75_report(records) + bad_line_report(bad):
+        print(line)
+
+if __name__ == '__main__':
+    main(sys.argv[1] if len(sys.argv) > 1 else 'month_demo')
