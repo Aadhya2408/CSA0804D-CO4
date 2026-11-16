@@ -1,1 +1,149 @@
+#ran after the deletion of reg_CIVIL file
+#fest/errors.py
+"""errors.py custom exceptions for the fest desk."""
 
+class FestError(Exception):
+    """Base class."""
+
+class InvalidRecord(FestError):
+    """A registration line breaks a validation rule."""
+
+class DuplicateRecord(InvalidRecord):
+    """The register number was already accepted."""
+
+#fest/validators.py
+"""validators.py field checks and line parsing."""
+from .errors import InvalidRecord
+
+def is_valid_email(email):
+    if ' ' in email or email.count('@') != 1:
+        return False
+    local, domain = email.split('@')
+    if not local or not domain:
+        return False
+    if '.' not in domain or domain.startswith('.') or domain.endswith('.') or '..' in domain:
+        return False
+    return True
+
+def parse_line(line, department):
+    """Return a record dict or raise InvalidRecord."""
+    parts = [p.strip() for p in line.strip().split(',')]
+    if len(parts) != 5:
+        raise InvalidRecord('expected 5 fields, found ' + str(len(parts)))
+    reg_no, name, dept, email, events_text = parts
+    if not reg_no.isalnum():
+        raise InvalidRecord('bad register number ' + repr(reg_no))
+    if not name:
+        raise InvalidRecord('empty name')
+    if dept.upper() != department:
+        raise InvalidRecord('department ' + repr(dept) + ' does not match file ' + department)
+    if not is_valid_email(email):
+        raise InvalidRecord('invalid email ' + repr(email))
+    events = [e.strip() for e in events_text.split(';') if e.strip()]
+    if not events:
+        raise InvalidRecord('no events chosen')
+    return {
+        'reg_no': reg_no.upper(),
+        'name': name,
+        'department': department,
+        'email': email.lower(),
+        'events': events
+    }
+
+#fest/processor.py
+"""processor.py read all department files safely."""
+from pathlib import Path
+from .errors import InvalidRecord, DuplicateRecord
+from .validators import parse_line
+
+DEPARTMENTS = ('CSE', 'ECE', 'EEE', 'MECH', 'CIVIL')
+
+def process_all(folder, departments=DEPARTMENTS):
+    """Return (registered, rejected, problems)."""
+    folder = Path(folder)
+    seen = set()
+    registered = []
+    rejected = []
+    problems = []
+    
+    for dept in departments:
+        path = folder / ('reg_' + dept + '.txt')
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                for line_no, line in enumerate(f, start=1):
+                    if not line.strip():
+                        continue
+                    try:
+                        record = parse_line(line, dept)
+                        if record['reg_no'] in seen:
+                            raise DuplicateRecord('duplicate register number ' + record['reg_no'])
+                    except InvalidRecord as exc:
+                        rejected.append((path.name, line_no, line.rstrip(), str(exc)))
+                    else:
+                        seen.add(record['reg_no'])
+                        registered.append(record)
+        except FileNotFoundError:
+            problems.append(path.name + ': department file missing')
+        except PermissionError:
+            problems.append(path.name + ': permission denied')
+        except UnicodeDecodeError:
+            problems.append(path.name + ': not valid UTF-8')
+            
+    return registered, rejected, problems
+
+#fest/report.py
+"""report.py write result files and the summary."""
+import csv
+from pathlib import Path
+
+def write_reports(out_folder, registered, rejected, problems):
+    out = Path(out_folder)
+    out.mkdir(parents=True, exist_ok=True)
+    
+    with open(out / 'registered.csv', 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['reg_no', 'name', 'department', 'email', 'events'])
+        for r in registered:
+            writer.writerow([r['reg_no'], r['name'], r['department'], r['email'], ';'.join(r['events'])])
+            
+    with open(out / 'rejected.log', 'w', encoding='utf-8') as f:
+        for file_name, line_no, text, reason in rejected:
+            f.write(f'{file_name}: {line_no}: {reason}: {text}\n')
+        for message in problems:
+            f.write('FILE PROBLEM: ' + message + '\n')
+            
+    counts = {}
+    for r in registered:
+        for event in r['events']:
+            counts[event] = counts.get(event, 0) + 1
+            
+    with open(out / 'event_counts.txt', 'w', encoding='utf-8') as f:
+        for event in sorted(counts):
+            f.write(f'{event}: {counts[event]}\n')
+
+def summary_lines(registered, rejected, problems):
+    return [
+        'Accepted: ' + str(len(registered)),
+        'Rejected lines: ' + str(len(rejected)),
+        'File problems: ' + str(len(problems))
+    ]
+
+#fest/__init__.py
+"""fest package college fest registration desk."""
+from .processor import process_all, DEPARTMENTS
+from .report import write_reports, summary_lines
+from .validators import is_valid_email
+from .errors import FestError, InvalidRecord, DuplicateRecord
+
+#run_fest.py
+import sys
+from fest import process_all, write_reports, summary_lines
+
+def main(folder='fest_input', out_folder='fest_output'):
+    registered, rejected, problems = process_all(folder)
+    write_reports(out_folder, registered, rejected, problems)
+    for line in summary_lines(registered, rejected, problems):
+        print(line)
+
+if __name__ == '__main__':
+    main(*sys.argv[1:3])
