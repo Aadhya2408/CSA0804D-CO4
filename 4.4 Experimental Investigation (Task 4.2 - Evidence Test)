@@ -1,0 +1,8 @@
+# test_evidence.py
+from library_log_buggy import process
+
+process('2025-10-01', ['Book A', 'Book B'])
+process('2025-10-02', ['Book C'])
+process('2025-10-03', ['Book D', 'Book E'])
+
+print(open('returns.log').read())
