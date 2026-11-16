@@ -1,0 +1,68 @@
+#should be run inside the same folder as the fest operatoions
+"""test_fest.py unit tests for the college fest registration desk."""
+"""test_fest.py unit tests for the college fest registration desk."""
+import sys
+from pathlib import Path
+
+# Add the parent directory (fest_project) to sys.path so 'fest' can be imported
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import tempfile
+import unittest
+from fest import process_all, is_valid_email, DEPARTMENTS
+import tempfile
+import unittest
+from pathlib import Path
+from fest import process_all, is_valid_email, DEPARTMENTS
+
+def good_files():
+    return {d: [f'21{d[:2]}001, Student {d}, {d}, s_{d.lower()}@simats.edu, Quiz; Hackathon']
+            for d in DEPARTMENTS}
+
+def run(files):
+    with tempfile.TemporaryDirectory() as tmp:
+        for dept, lines in files.items():
+            Path(tmp, 'reg_' + dept + '.txt').write_text(
+                '\n'.join(lines) + '\n', encoding='utf-8')
+        return process_all(tmp)
+
+class FestTests(unittest.TestCase):
+    def test_clean_files(self):
+        registered, rejected, problems = run(good_files())
+        self.assertEqual((len(registered), len(rejected), len(problems)), (5, 0, 0))
+
+    def test_duplicate_registration(self):
+        files = good_files()
+        files['ECE'] = ['21CS001, Same Person, ECE, same@simats.edu, Quiz'] # reg_no of CSE student
+        registered, rejected, problems = run(files)
+        self.assertEqual(len(registered), 4)
+        self.assertIn('duplicate', rejected[0][3])
+
+    def test_invalid_email(self):
+        files = good_files()
+        files['EEE'] = ['21EE001, Bad Mail, EEE, bad@@simats.edu, Quiz',
+                        '21EE002, No At, EEE, no-at.edu, Quiz']
+        registered, rejected, problems = run(files)
+        self.assertEqual((len(registered), len(rejected)), (4, 2))
+
+    def test_damaged_line(self):
+        files = good_files()
+        files['MECH'] = ['21ME001, Only Three, MECH']
+        registered, rejected, problems = run(files)
+        self.assertEqual(len(registered), 4)
+        self.assertIn('expected 5 fields', rejected[0][3])
+
+    def test_missing_department_file(self):
+        files = good_files()
+        del files['CIVIL']
+        registered, rejected, problems = run(files)
+        self.assertEqual(len(registered), 4)
+        self.assertEqual(problems, ['reg_CIVIL.txt: department file missing'])
+
+    def test_email_rules(self):
+        self.assertTrue(is_valid_email('a.b@simats.edu'))
+        for bad in ('a@@b.com', 'ab.com', '@b.com', 'a@b', 'a b@c.com', 'a@.com'):
+            self.assertFalse(is_valid_email(bad))
+
+if __name__ == '__main__':
+    unittest.main()
