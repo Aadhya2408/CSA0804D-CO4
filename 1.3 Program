@@ -1,0 +1,60 @@
+"""mess_bills.py - robust mess-bill totaller (Task 1.2)."""
+from decimal import Decimal, InvalidOperation
+
+
+def process_mess_bills(file_name, encoding='utf-8'):
+    '''Return (total, report_lines, rejected) for one mess-bill file.
+
+    rejected is a list of (line_no, raw_line, reason).
+    '''
+    total = Decimal('0')
+    report_lines = []
+    rejected = []
+
+    with open(file_name, 'r', encoding=encoding) as f:   # closed automatically
+        for line_no, raw in enumerate(f, start=1):       # one line at a time
+            line = raw.strip()
+            if not line:                                 # blank / trailing line
+                continue
+            parts = [p.strip() for p in line.split(',')]
+            try:
+                if len(parts) != 3:
+                    raise ValueError('expected 3 fields, found ' + str(len(parts)))
+                reg_no, name, amount_text = parts
+                if not reg_no or not name:
+                    raise ValueError('empty register number or name')
+                amount = Decimal(amount_text)            # exact paise handling
+                if not amount.is_finite() or amount < 0:
+                    raise ValueError('amount must be a non-negative number')
+            except (ValueError, InvalidOperation) as exc:  # specific exceptions only
+                rejected.append((line_no, line, str(exc)))
+                continue
+            total += amount
+            report_lines.append(f'{reg_no:<12}{name:<20}{amount:>10.2f}')
+    return total, report_lines, rejected
+
+
+def main():
+    file_name = 'mess_oct.txt'
+    try:
+        total, lines, rejected = process_mess_bills(file_name)
+    except FileNotFoundError:
+        print('Error: file not found: ' + file_name)
+        return
+    except PermissionError:
+        print('Error: no permission to read ' + file_name)
+        return
+    except UnicodeDecodeError as exc:
+        print('Error: file is not valid UTF-8: ' + str(exc))
+        return
+
+    for entry in lines:
+        print(entry)
+    print('Total: Rs.', format(total, '.2f'))
+    print('Rejected lines:', len(rejected))
+    for line_no, text, reason in rejected:
+        print(f'  line {line_no}: {text!r} -> {reason}')
+
+
+if __name__ == '__main__':
+    main()
