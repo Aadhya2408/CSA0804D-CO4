@@ -1,0 +1,33 @@
+"""library_log.py - repaired return log (Task 4.3)."""
+from datetime import datetime
+
+LOG_FILE = 'returns.log'
+ERROR_LOG = 'errors.log'
+
+def log_error(message, error_file=ERROR_LOG):
+    '''Append a timestamped error line; never raises.'''
+    try:
+        with open(error_file, 'a', encoding='utf-8') as ef:
+            ef.write(datetime.now().isoformat(timespec='seconds') + ' ' + message + '\n')
+    except OSError:
+        print('Could not write error log:', message)
+
+def process(day, returns, log_file=LOG_FILE):
+    '''Append one line per returned book; return the number written.'''
+    written = 0
+    try:
+        with open(log_file, 'a', encoding='utf-8') as f:       # append mode
+            for book in returns:
+                f.write(day + ' ' + str(book) + '\n')         # newline added
+                written += 1
+    except OSError as exc:                                    # disk, permission, path
+        log_error('write failed on ' + day + ' after ' + str(written) + ' lines: ' + str(exc))
+        raise
+    return written
+
+if __name__ == '__main__':
+    process('2025-10-01', ['Book A', 'Book B'])
+    process('2025-10-02', ['Book C'])
+    process('2025-10-03', ['Book D', 'Book E'])
+    with open(LOG_FILE, 'r', encoding='utf-8') as f:
+        print(f.read(), end='')
