@@ -1,0 +1,75 @@
+"""attendance_core.py - parsing and summarising attendance (Task 3.3)."""
+from datetime import datetime
+from pathlib import Path
+
+class AttendanceError(Exception):
+    '''Base class for attendance-processor problems.'''
+
+class InvalidRecord(AttendanceError):
+    '''One attendance line is damaged or semantically wrong.'''
+
+# TODO 1 (completed): validate 3 fields and P/A status
+def parse_line(line):
+    '''Return (reg_no, date, status) or raise InvalidRecord.'''
+    parts = [p.strip() for p in line.strip().split(',')]
+    if len(parts) != 3:
+        raise InvalidRecord('expected 3 fields, found ' + str(len(parts)))
+    reg_no, date_text, status = parts
+    if not reg_no:
+        raise InvalidRecord('empty register number')
+    status = status.upper()
+    if status not in ('P', 'A'):
+        raise InvalidRecord('status must be P or A, got ' + repr(status))
+    try:
+        datetime.strptime(date_text, '%Y-%m-%d')
+    except ValueError as exc:
+        raise InvalidRecord('bad date ' + repr(date_text)) from exc  # raise ... from ...
+    return reg_no, date_text, status
+
+# TODO 2 (completed): count P and A with a with statement, log bad lines
+def summarise(path):
+    '''Return (present, absent, bad_lines) for one attendance file.
+
+    bad_lines is a list of (file_name, line_no, text, reason).
+    '''
+    path = Path(path)
+    present = absent = 0
+    bad_lines = []
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for line_no, line in enumerate(f, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    reg_no, date_text, status = parse_line(line)
+                except InvalidRecord as exc:  # specific except
+                    bad_lines.append((path.name, line_no, line.rstrip(), str(exc)))
+                else:  # runs only if parse succeeded
+                    if status == 'P':
+                        present += 1
+                    else:
+                        absent += 1
+    except FileNotFoundError as exc:
+        raise AttendanceError('file missing: ' + str(path)) from exc
+    except PermissionError as exc:
+        raise AttendanceError('permission denied: ' + str(path)) from exc
+    except UnicodeDecodeError as exc:
+        raise AttendanceError('cannot decode (expected UTF-8): ' + str(path)) from exc
+    finally:  # always runs
+        print('finished reading', path.name)
+        if present + absent + len(bad_lines) == 0:
+            raise AttendanceError('empty file: ' + str(path))
+        return present, absent, bad_lines
+
+if __name__ == '__main__':
+    sample = Path('att_2025-10-01.txt')
+    sample.write_text('21EC001,2025-10-01,P\n21EC002,2025-10-01,A\n'
+                      '21EC003,2025-10-01\n21EC004,2025-10-01,X\n', encoding='utf-8')
+    p, a, bad = summarise(sample)
+    print('Present:', p, 'Absent:', a)
+    for entry in bad:
+        print('BAD', entry)
+    try:
+        summarise('no_such_file.txt')
+    except AttendanceError as exc:
+        print('Handled:', exc, '| caused by:', repr(exc.__cause__))
